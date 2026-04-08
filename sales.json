@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "telegram_id": 7330363421,
+    "name": "Iqbal Hossain",
+    "mall_name": "Oasis mall",
+    "store_name": "Emax",
+    "date": "2026-04-08",
+    "pretty_date": "08 April 2026",
+    "dsr_date": "08/04/2026",
+    "logout_time": "15:00:55",
+    "customers_attend": 4,
+    "items": [],
+    "total_qty": 0,
+    "total_value": 0
+  }
+]
