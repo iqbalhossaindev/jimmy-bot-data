@@ -1,12 +1,12 @@
 import os
 
-BOT_TOKEN = os.getenv("8786909124:AAGsE9DM_uGv11yBYbwNfXreHwjFMzhHvMk", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 ADMIN_IDS = [7330363421]
 
 PRIVATE_GROUP_ID = -1003749297189
 
-GITHUB_TOKEN = os.getenv("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", "")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_OWNER = "iqbalhossaindev"
 GITHUB_REPO = "jimmy-bot-data"
 GITHUB_BRANCH = "main"
