@@ -1,8 +1,4 @@
 import os
-import io
-import csv
-import json
-import time as time_module
 import logging
 import threading
 import datetime
@@ -15,14 +11,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Table,
-    TableStyle,
-    Paragraph,
-    Spacer,
-    Image,
-)
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.ext import (
@@ -42,7 +31,6 @@ from config import (
     MAIN_MENU,
     YES_NO_MENU,
     CONFIRM_RETRY_MENU,
-    DONE_NONE_MENU,
     TIMEZONE,
 )
 from github_storage import GitHubStorage
@@ -400,30 +388,18 @@ def build_monthly_pdf(employee, summary, year_month, output_path):
     breaks = get_breaks()
 
     sales_by_date = {}
+    target_month = month_key()
+
     for sale in sales:
-        if str(sale.get("telegram_id")) == str(employee["telegram_id"]) and str(sale.get("date", "")).startswith(
-            year_month.replace(" ", "-").replace("/", "-")
-        ):
+        if str(sale.get("telegram_id")) == str(employee["telegram_id"]) and str(sale.get("date", "")).startswith(target_month):
             sales_by_date[sale["date"]] = sale
 
     break_by_date = defaultdict(int)
     for item in breaks:
-        if str(item.get("telegram_id")) == str(employee["telegram_id"]) and str(item.get("date", "")).startswith(
-            year_month.replace(" ", "-").replace("/", "-")
-        ):
+        if str(item.get("telegram_id")) == str(employee["telegram_id"]) and str(item.get("date", "")).startswith(target_month):
             break_by_date[item["date"]] += int(item.get("seconds", 0) or 0)
 
     month_rows = [["Date", "Time In", "Time Out", "Break", "Work Hours", "Sales Qty", "Sales Value"]]
-
-    target_month = None
-    for row in attendance:
-        if str(row.get("telegram_id")) == str(employee["telegram_id"]):
-            target_month = row.get("date", "")[:7]
-            if target_month:
-                break
-
-    if target_month is None:
-        target_month = month_key()
 
     for day in range(1, 32):
         try:
@@ -588,12 +564,12 @@ def break_start(update, context):
             update.message.reply_text("⚠️ Break already started.")
             return
 
-    now = now_local()
+    value = now_local()
     breaks.append(
         {
             "telegram_id": user_id,
             "date": today,
-            "start": time_str(now),
+            "start": time_str(value),
             "end": None,
             "seconds": 0,
         }
@@ -605,8 +581,8 @@ def break_start(update, context):
         f'👤 *Name:* {employee["name"]}\n'
         f'📍 *Mall:* {employee["mall_name"]}\n'
         f'🏬 *Store:* {employee["store_name"]}\n\n'
-        f'🕒 *Time:* {time_str(now)}\n'
-        f'📅 *Date:* {pretty_date(now)}'
+        f'🕒 *Time:* {time_str(value)}\n'
+        f'📅 *Date:* {pretty_date(value)}'
     )
 
     update.message.reply_text(msg, parse_mode="Markdown")
@@ -625,13 +601,13 @@ def break_end(update, context):
 
     breaks = get_breaks()
     today = date_str()
-    now = now_local()
+    value = now_local()
 
     for item in breaks:
         if str(item.get("telegram_id")) == str(user_id) and item.get("date") == today and not item.get("end"):
             start_dt = tz.localize(dt.strptime(f'{today} {item["start"]}', "%Y-%m-%d %H:%M:%S"))
-            seconds = int((now - start_dt).total_seconds())
-            item["end"] = time_str(now)
+            seconds = int((value - start_dt).total_seconds())
+            item["end"] = time_str(value)
             item["seconds"] = seconds
             save_breaks(breaks)
 
@@ -642,8 +618,8 @@ def break_end(update, context):
                 f'👤 *Name:* {employee["name"]}\n'
                 f'📍 *Mall:* {employee["mall_name"]}\n'
                 f'🏬 *Store:* {employee["store_name"]}\n\n'
-                f'🕒 *Time:* {time_str(now)}\n'
-                f'📅 *Date:* {pretty_date(now)}\n\n'
+                f'🕒 *Time:* {time_str(value)}\n'
+                f'📅 *Date:* {pretty_date(value)}\n\n'
                 f'⏱ *Break Used Today:* {seconds_to_hms(used_today)}'
             )
 
