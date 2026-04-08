@@ -1,29 +1,57 @@
-# JIMMY Bot Source Code v2
+# JIMMY Bot Final Package
 
-This version adds:
+This package includes:
 
-1. Private signup
+1. Private signup flow
 2. Admin approve or reject
-3. Automatic group join request link after approval
-4. Automatic approval of group join requests
-5. Login report to private group and user inbox
-6. Logout and DSR report to private group and user inbox
-7. Status with monthly totals and date wise product names
-8. Admin history search
+3. Login report to private group and user inbox
+4. Logout flow with:
+   1. sales entry
+   2. Reset button
+   3. Undo button
+   4. input validation
+5. Status report with:
+   1. working days
+   2. total hours
+   3. total sales
+   4. total quantity
+   5. total break time
+   6. date wise products
+6. Break system:
+   1. Break Start
+   2. Break End
+7. Monthly PDF timesheet style
+8. Admin history text and PDF
+9. Daily absence warning to staff and admin
+10. Automatic monthly report message
+11. Render health server for web service deployment
 
-## Important setup
+## Required repo files
+Keep these in the same repo root:
+- employees.json
+- pending.json
+- sales.json
+- break.json
+- absence.json
+- attendance.csv
 
-Your bot must be admin in the private group with permission to invite users.
-The bot must stay in the group to receive join request updates.
+## Required environment variables
+- BOT_TOKEN
+- ADMIN_IDS
+- PRIVATE_GROUP_ID
+- GITHUB_TOKEN
+- GITHUB_OWNER
+- GITHUB_REPO
+- GITHUB_BRANCH
+- TIMEZONE
+- BRAND_NAME
 
-## How to use
+## Render
+- Build command: `pip install -r requirements.txt`
+- Start command: `python main.py`
 
-1. Copy `.env.example` to `.env`
-2. Fill real values
-3. Install dependencies
-4. Run:
-
-```bash
-pip install -r requirements.txt
-python main.py
-```
+## Logo
+If you want the PDF to include your logo, upload one of these in the repo root:
+- logo.png
+- logo.jpg
+- logo.jpeg

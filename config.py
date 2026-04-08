@@ -11,7 +11,9 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_OWNER = os.getenv("GITHUB_OWNER", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 GITHUB_BRANCH = os.getenv("GITHUB_BRANCH", "main")
+
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Dubai")
+BRAND_NAME = os.getenv("BRAND_NAME", "JIMMY")
 
 PRODUCTS = [
     "F7",
@@ -27,7 +29,10 @@ PRODUCTS = [
     "JV9 Pro Aqua",
 ]
 
-MAIN_MENU = [["Login", "Logout", "Status"]]
+MAIN_MENU = [["Login", "Logout"], ["Status", "Break"]]
+BREAK_MENU = [["Break Start", "Break End"], ["Back"]]
+LOGOUT_MENU = [[p] for p in PRODUCTS] + [["Done", "None"], ["Undo", "Reset"]]
 YES_NO_MENU = [["Yes", "No"]]
-CONFIRM_RETRY_MENU = [["Confirm", "Retry"]]
-DONE_NONE_MENU = [["Done", "None"]]
+CONFIRM_RETRY_MENU = [["Confirm", "Retry"], ["Reset"]]
+STATUS_MENU = [["Print PDF"], ["Back to Main Menu"]]
+ADMIN_MENU = [["Pending Requests", "Employees List"], ["Today Reports", "Monthly Reports"], ["Back to Main Menu"]]
