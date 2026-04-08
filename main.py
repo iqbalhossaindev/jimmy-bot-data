@@ -43,6 +43,8 @@ logging.basicConfig(
 storage = GitHubStorage()
 tz = pytz.timezone(TIMEZONE)
 
+ROLE_SELECT = 100
+
 (
     REG_NAME,
     REG_MALL,
@@ -68,6 +70,7 @@ ATTENDANCE_FIELDS = [
 ]
 
 BREAK_LIMIT_SECONDS = 3600
+ROLE_MENU = [["1. Sales Employee", "2. Management"]]
 ADMIN_MENU = [["Admin Panel", "Login"], ["Logout", "Status"], ["Break Start", "Break End"]]
 ADMIN_PANEL_MENU = [["Pending Requests", "Employees List"], ["Make Admin", "Back To Main"]]
 
@@ -535,7 +538,7 @@ def send_admin_history_pdf(update, context):
 
     summary = user_month_summary(employee["telegram_id"])
     ym = now_local().strftime("%B %Y")
-    output_path = f"/tmp/admin_history_{employee['telegram_id']}.pdf"
+    output_path = f"/tmp/admin_history_{employee["telegram_id"]}.pdf"
     build_monthly_pdf(employee, summary, ym, output_path)
 
     with open(output_path, "rb") as file_obj:
@@ -654,7 +657,7 @@ def break_end(update, context):
 
 def show_admin_panel(update):
     update.message.reply_text(
-        "🔐 Admin Panel",
+        "🔐 Management Panel",
         reply_markup=ReplyKeyboardMarkup(ADMIN_PANEL_MENU, resize_keyboard=True),
     )
 
@@ -662,7 +665,7 @@ def show_admin_panel(update):
 def show_main_menu_for_user(update, user_id):
     if is_admin(user_id):
         update.message.reply_text(
-            "Welcome Admin.",
+            "Welcome to JIMMY Management.",
             reply_markup=ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True),
         )
     else:
@@ -673,25 +676,49 @@ def show_main_menu_for_user(update, user_id):
 
 
 def start(update: Update, context: CallbackContext):
+    update.message.reply_text(
+        "Welcome to JIMMY\n\nPlease choose your role:",
+        reply_markup=ReplyKeyboardMarkup(ROLE_MENU, resize_keyboard=True),
+    )
+    return ROLE_SELECT
+
+
+def role_select(update: Update, context: CallbackContext):
+    text = update.message.text.strip()
     user_id = update.effective_user.id
 
-    if is_admin(user_id):
-        update.message.reply_text(
-            "👋 Welcome Admin to JIMMY.",
-            reply_markup=ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True),
-        )
-        return ConversationHandler.END
+    if text == "1. Sales Employee":
+        employee = find_employee(user_id)
 
-    employee = find_employee(user_id)
-    if employee:
-        update.message.reply_text(
-            "Welcome back to JIMMY.",
-            reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
-        )
-        return ConversationHandler.END
+        if employee:
+            update.message.reply_text(
+                "Welcome back to JIMMY.",
+                reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
+            )
+            return ConversationHandler.END
 
-    update.message.reply_text("Welcome to JIMMY.\n\nWhat is your name?")
-    return REG_NAME
+        update.message.reply_text("What is your name?")
+        return REG_NAME
+
+    if text == "2. Management":
+        if is_admin(user_id):
+            update.message.reply_text(
+                "Welcome to JIMMY Management.",
+                reply_markup=ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True),
+            )
+            return ConversationHandler.END
+
+        update.message.reply_text(
+            "No problem, let's try again.\n\nPlease choose your role:",
+            reply_markup=ReplyKeyboardMarkup(ROLE_MENU, resize_keyboard=True),
+        )
+        return ROLE_SELECT
+
+    update.message.reply_text(
+        "Please choose a valid option.",
+        reply_markup=ReplyKeyboardMarkup(ROLE_MENU, resize_keyboard=True),
+    )
+    return ROLE_SELECT
 
 
 def reg_name(update: Update, context: CallbackContext):
@@ -763,7 +790,7 @@ def reg_confirm(update: Update, context: CallbackContext):
         except Exception:
             logging.exception("Failed to send admin registration request")
 
-    update.message.reply_text("Registration request sent to admin.\n\nPlease wait for approval.")
+    update.message.reply_text("Registration request sent to management.\n\nPlease wait for approval.")
     return ConversationHandler.END
 
 
@@ -829,7 +856,7 @@ def reject_dynamic(update: Update, context: CallbackContext):
             (
                 "❌ *REGISTRATION REJECTED*\n\n"
                 "Your application was not approved.\n"
-                "Please contact admin for assistance."
+                "Please contact management for assistance."
             ),
         )
     except Exception:
@@ -875,7 +902,7 @@ def show_employees_list(update: Update, context: CallbackContext):
 
 def admin_panel(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
-        update.message.reply_text("Admin only.")
+        update.message.reply_text("Management only.")
         return
     show_admin_panel(update)
 
@@ -886,11 +913,11 @@ def back_to_main(update: Update, context: CallbackContext):
 
 def make_admin_start(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
-        update.message.reply_text("Admin only.")
+        update.message.reply_text("Management only.")
         return ConversationHandler.END
 
     update.message.reply_text(
-        "Send the Telegram user ID you want to add as admin.",
+        "Send the Telegram user ID you want to add as management.",
         reply_markup=ReplyKeyboardMarkup([["Back To Main"]], resize_keyboard=True),
     )
     return ADMIN_ADD_ADMIN_ID
@@ -913,11 +940,11 @@ def make_admin_save(update: Update, context: CallbackContext):
     new_admin_id = int(text)
 
     if new_admin_id in ADMIN_IDS:
-        update.message.reply_text("This user is already admin.")
+        update.message.reply_text("This user is already management.")
         return ConversationHandler.END
 
     update.message.reply_text(
-        "⚠️ Permanent admin IDs are controlled in config.py\n\n"
+        "⚠️ Management IDs are controlled in config.py\n\n"
         f"Please add this ID manually in config.py:\n{new_admin_id}\n\n"
         "Then redeploy the bot."
     )
@@ -934,9 +961,9 @@ def login(update: Update, context: CallbackContext):
 
     if is_admin(user_id) and not employee:
         employee = {
-            "name": "Admin",
-            "mall_name": "Admin",
-            "store_name": "Admin",
+            "name": "Management",
+            "mall_name": "Management",
+            "store_name": "Management",
         }
 
     today = date_str()
@@ -997,9 +1024,9 @@ def logout_start(update: Update, context: CallbackContext):
 
     if is_admin(user_id) and not employee:
         employee = {
-            "name": "Admin",
-            "mall_name": "Admin",
-            "store_name": "Admin",
+            "name": "Management",
+            "mall_name": "Management",
+            "store_name": "Management",
         }
 
     rows = get_attendance()
@@ -1211,9 +1238,9 @@ def logout_confirm(update: Update, context: CallbackContext):
 
     if is_admin(user_id) and not employee:
         employee = {
-            "name": "Admin",
-            "mall_name": "Admin",
-            "store_name": "Admin",
+            "name": "Management",
+            "mall_name": "Management",
+            "store_name": "Management",
         }
 
     rows = get_attendance()
@@ -1282,9 +1309,9 @@ def status(update: Update, context: CallbackContext):
 
     if is_admin(user_id) and not employee:
         employee = {
-            "name": "Admin",
-            "mall_name": "Admin",
-            "store_name": "Admin",
+            "name": "Management",
+            "mall_name": "Management",
+            "store_name": "Management",
         }
 
     summary = user_month_summary(user_id)
@@ -1434,7 +1461,7 @@ def check_absence(context: CallbackContext):
                 f'📍 *Mall:* {emp["mall_name"]}\n'
                 f'🏬 *Store:* {emp["store_name"]}\n\n'
                 f'❗ *Absent for {absent_days} days*\n\n'
-                "Please follow up with the staff member."
+                "Please follow up with the sales employee."
             )
             try:
                 send_markdown(context.bot, int(user_id), staff_msg)
@@ -1494,6 +1521,7 @@ def main():
     registration = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
+            ROLE_SELECT: [MessageHandler(Filters.text & ~Filters.command, role_select)],
             REG_NAME: [MessageHandler(Filters.text & ~Filters.command, reg_name)],
             REG_MALL: [MessageHandler(Filters.text & ~Filters.command, reg_mall)],
             REG_STORE: [MessageHandler(Filters.text & ~Filters.command, reg_store)],
