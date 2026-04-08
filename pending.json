@@ -7,5 +7,14 @@
     "store_name": "Emax",
     "status": "pending",
     "applied_at": "2026-04-08T22:02:05.557685+04:00"
+  },
+  {
+    "telegram_id": 7330363421,
+    "username": "iqbalhossainbd",
+    "name": "Super Admin",
+    "mall_name": "Super Admin",
+    "store_name": "Super Admin",
+    "status": "pending",
+    "applied_at": "2026-04-08T22:04:40.945129+04:00"
   }
 ]
