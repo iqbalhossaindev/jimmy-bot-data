@@ -1,30 +1,35 @@
+import logging
 from datetime import datetime
 from collections import defaultdict
 
 import pytz
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.ext import (
-    Application,
-    ChatJoinRequestHandler,
+    Updater,
     CommandHandler,
-    ContextTypes,
-    ConversationHandler,
     MessageHandler,
-    filters,
+    Filters,
+    ConversationHandler,
+    CallbackContext,
 )
 
 from config import (
-    ADMIN_IDS,
     BOT_TOKEN,
-    CONFIRM_RETRY_MENU,
-    DONE_NONE_MENU,
-    MAIN_MENU,
+    ADMIN_IDS,
     PRIVATE_GROUP_ID,
     PRODUCTS,
-    TIMEZONE,
+    MAIN_MENU,
     YES_NO_MENU,
+    CONFIRM_RETRY_MENU,
+    DONE_NONE_MENU,
+    TIMEZONE,
 )
 from github_storage import GitHubStorage
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
 
 storage = GitHubStorage()
 tz = pytz.timezone(TIMEZONE)
@@ -42,77 +47,107 @@ tz = pytz.timezone(TIMEZONE)
 ) = range(9)
 
 ATTENDANCE_FIELDS = [
-    "telegram_id", "name", "mall_name", "store_name",
-    "date", "login_time", "logout_time", "work_seconds"
+    "telegram_id",
+    "name",
+    "mall_name",
+    "store_name",
+    "date",
+    "login_time",
+    "logout_time",
+    "work_seconds",
 ]
+
 
 def now_local():
     return datetime.now(tz)
+
 
 def date_str(dt=None):
     dt = dt or now_local()
     return dt.strftime("%Y-%m-%d")
 
+
 def pretty_date(dt=None):
     dt = dt or now_local()
     return dt.strftime("%d %B %Y")
+
 
 def time_str(dt=None):
     dt = dt or now_local()
     return dt.strftime("%H:%M:%S")
 
-def seconds_to_hms(total_seconds: int) -> str:
+
+def seconds_to_hms(total_seconds):
+    total_seconds = int(total_seconds)
     h = total_seconds // 3600
     m = (total_seconds % 3600) // 60
     s = total_seconds % 60
     return f"{h}:{m:02d}:{s:02d}"
 
-def get_employees():
-    return storage.read_json("employees.json", [])
-
-def save_employees(data):
-    storage.write_json("employees.json", data, "Update employees.json")
-
-def get_pending():
-    return storage.read_json("pending.json", [])
-
-def save_pending(data):
-    storage.write_json("pending.json", data, "Update pending.json")
-
-def get_sales():
-    return storage.read_json("sales.json", [])
-
-def save_sales(data):
-    storage.write_json("sales.json", data, "Update sales.json")
-
-def get_attendance():
-    return storage.read_csv_rows("attendance.csv")
-
-def save_attendance(rows):
-    storage.write_csv_rows("attendance.csv", ATTENDANCE_FIELDS, rows, "Update attendance.csv")
-
-def find_employee(telegram_id: int):
-    for item in get_employees():
-        if int(item["telegram_id"]) == telegram_id and item.get("status") == "approved":
-            return item
-    return None
-
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
 
 def month_key(dt=None):
     dt = dt or now_local()
     return dt.strftime("%Y-%m")
 
-def user_month_summary(telegram_id: int):
+
+def is_admin(user_id):
+    return user_id in ADMIN_IDS
+
+
+def get_employees():
+    return storage.read_json("employees.json", [])
+
+
+def save_employees(data):
+    storage.write_json("employees.json", data, "Update employees.json")
+
+
+def get_pending():
+    return storage.read_json("pending.json", [])
+
+
+def save_pending(data):
+    storage.write_json("pending.json", data, "Update pending.json")
+
+
+def get_sales():
+    return storage.read_json("sales.json", [])
+
+
+def save_sales(data):
+    storage.write_json("sales.json", data, "Update sales.json")
+
+
+def get_attendance():
+    return storage.read_csv_rows("attendance.csv")
+
+
+def save_attendance(rows):
+    storage.write_csv_rows(
+        "attendance.csv",
+        ATTENDANCE_FIELDS,
+        rows,
+        "Update attendance.csv",
+    )
+
+
+def find_employee(telegram_id):
+    for item in get_employees():
+        if str(item.get("telegram_id")) == str(telegram_id) and item.get("status") == "approved":
+            return item
+    return None
+
+
+def user_month_summary(telegram_id):
     month = month_key()
     attendance = get_attendance()
     sales = get_sales()
 
     working_days = 0
     total_seconds = 0
+
     for row in attendance:
-        if str(row["telegram_id"]) == str(telegram_id) and str(row["date"]).startswith(month):
+        if str(row.get("telegram_id")) == str(telegram_id) and str(row.get("date", "")).startswith(month):
             if row.get("login_time"):
                 working_days += 1
             try:
@@ -141,6 +176,7 @@ def user_month_summary(telegram_id: int):
         "products_by_date": dict(products_by_date),
     }
 
+
 def format_login_report(employee, dt, working_days):
     return (
         "Login\n\n"
@@ -151,6 +187,7 @@ def format_login_report(employee, dt, working_days):
         f"Date: {pretty_date(dt)}\n"
         f"This Month Total Working Day: {working_days}"
     )
+
 
 def build_dsr_text(employee, report, today_hours_text):
     lines = []
@@ -169,53 +206,68 @@ def build_dsr_text(employee, report, today_hours_text):
     lines.append(f'Total Customers Attend: {report["customers_attend"]}')
     lines.append("")
     lines.append("Model | Qty | Price | Total")
+
     for item in report["items"]:
         lines.append(f'{item["product"]} | {item["qty"]} | {item["price"]} | {item["total"]}')
+
     lines.append("")
     lines.append(f'Total Qty: {report["total_qty"]}')
     lines.append(f'Total Value: {report["total_value"]}')
     return "\n".join(lines)
 
-async def send_group_join_link(bot, user_id: int):
-    link = await bot.create_chat_invite_link(
-        chat_id=PRIVATE_GROUP_ID,
-        name=f"JIMMY-{user_id}",
-        creates_join_request=True,
-    )
-    await bot.send_message(
-        chat_id=user_id,
-        text=(
-            "Your registration is approved.\n\n"
-            "Tap the link below to request joining the private group.\n"
-            "The bot will approve your request automatically.\n\n"
-            f"{link.invite_link}"
-        ),
-    )
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def send_group_join_link(bot, user_id):
+    try:
+        link = bot.create_chat_invite_link(
+            chat_id=PRIVATE_GROUP_ID,
+            name=f"JIMMY-{user_id}",
+            creates_join_request=True,
+        )
+        bot.send_message(
+            chat_id=user_id,
+            text=(
+                "Your registration is approved.\n\n"
+                "Tap the link below to request joining the private group.\n"
+                "The bot will approve your request automatically.\n\n"
+                f"{link.invite_link}"
+            ),
+        )
+    except Exception as e:
+        logging.exception("Failed to send group join link: %s", e)
+        bot.send_message(
+            chat_id=user_id,
+            text="Your registration is approved, but the group join link could not be created. Please contact admin.",
+        )
+
+
+def start(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     employee = find_employee(user_id)
+
     if employee:
-        await update.message.reply_text(
+        update.message.reply_text(
             "Welcome back to JIMMY.",
             reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
         )
         return ConversationHandler.END
 
-    await update.message.reply_text("Welcome to JIMMY.\n\nWhat is your name?")
+    update.message.reply_text("Welcome to JIMMY.\n\nWhat is your name?")
     return REG_NAME
 
-async def reg_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def reg_name(update: Update, context: CallbackContext):
     context.user_data["reg_name"] = update.message.text.strip()
-    await update.message.reply_text("Which mall are you working now?")
+    update.message.reply_text("Which mall are you working now?")
     return REG_MALL
 
-async def reg_mall(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def reg_mall(update: Update, context: CallbackContext):
     context.user_data["reg_mall"] = update.message.text.strip()
-    await update.message.reply_text("What is your shop name?")
+    update.message.reply_text("What is your shop name?")
     return REG_STORE
 
-async def reg_store(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def reg_store(update: Update, context: CallbackContext):
     context.user_data["reg_store"] = update.message.text.strip()
     text = (
         "Please confirm your details:\n\n"
@@ -224,17 +276,23 @@ async def reg_store(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f'Store: {context.user_data["reg_store"]}\n\n'
         "Are you confirm?"
     )
-    await update.message.reply_text(text, reply_markup=ReplyKeyboardMarkup(YES_NO_MENU, resize_keyboard=True))
+    update.message.reply_text(
+        text,
+        reply_markup=ReplyKeyboardMarkup(YES_NO_MENU, resize_keyboard=True),
+    )
     return REG_CONFIRM
 
-async def reg_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def reg_confirm(update: Update, context: CallbackContext):
     answer = update.message.text.strip().lower()
+
     if answer == "no":
-        await update.message.reply_text("No problem. Let's try again.\n\nWhat is your name?")
+        update.message.reply_text("No problem. Let's try again.\n\nWhat is your name?")
         return REG_NAME
 
     user = update.effective_user
     pending = get_pending()
+
     record = {
         "telegram_id": user.id,
         "username": user.username or "",
@@ -250,28 +308,34 @@ async def reg_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_pending(pending)
 
     for admin_id in ADMIN_IDS:
-        await context.bot.send_message(
-            chat_id=admin_id,
-            text=(
-                "New registration request\n\n"
-                f'Name: {record["name"]}\n'
-                f'Mall Name: {record["mall_name"]}\n'
-                f'Store: {record["store_name"]}\n\n'
-                f"Reply with:\n/approve_{user.id}\nor\n/reject_{user.id}"
-            ),
-        )
+        try:
+            context.bot.send_message(
+                chat_id=admin_id,
+                text=(
+                    "New registration request\n\n"
+                    f'Name: {record["name"]}\n'
+                    f'Mall Name: {record["mall_name"]}\n'
+                    f'Store: {record["store_name"]}\n\n'
+                    f"Reply with:\n/approve_{user.id}\nor\n/reject_{user.id}"
+                ),
+            )
+        except Exception:
+            logging.exception("Failed to send admin registration request")
 
-    await update.message.reply_text("Registration request sent to admin.\n\nPlease wait for approval.")
+    update.message.reply_text("Registration request sent to admin.\n\nPlease wait for approval.")
     return ConversationHandler.END
 
-async def approve_dynamic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def approve_dynamic(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
         return
+
     user_id = int(update.message.text.strip().split("_", 1)[1])
 
     pending = get_pending()
     match = None
     rest = []
+
     for item in pending:
         if str(item.get("telegram_id")) == str(user_id):
             match = item
@@ -279,11 +343,12 @@ async def approve_dynamic(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rest.append(item)
 
     if not match:
-        await update.message.reply_text("Pending request not found.")
+        update.message.reply_text("Pending request not found.")
         return
 
     employees = get_employees()
     employees = [x for x in employees if str(x.get("telegram_id")) != str(user_id)]
+
     match["status"] = "approved"
     match["approved_at"] = now_local().isoformat()
     employees.append(match)
@@ -291,57 +356,84 @@ async def approve_dynamic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_employees(employees)
     save_pending(rest)
 
-    await update.message.reply_text("Registration approved successfully.")
-    await context.bot.send_message(
-        chat_id=user_id,
-        text="Registration approved successfully.\n\nCongratulations!\nWelcome to JIMMY.",
-        reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
-    )
-    await send_group_join_link(context.bot, user_id)
+    update.message.reply_text("Registration approved successfully.")
 
-async def reject_dynamic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        context.bot.send_message(
+            chat_id=user_id,
+            text="Registration approved successfully.\n\nCongratulations!\nWelcome to JIMMY.",
+            reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
+        )
+        send_group_join_link(context.bot, user_id)
+    except Exception:
+        logging.exception("Failed to notify approved user")
+
+
+def reject_dynamic(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
         return
+
     user_id = int(update.message.text.strip().split("_", 1)[1])
 
     pending = get_pending()
     rest = [x for x in pending if str(x.get("telegram_id")) != str(user_id)]
     save_pending(rest)
 
-    await update.message.reply_text("Registration rejected.")
-    await context.bot.send_message(
-        chat_id=user_id,
-        text="Registration rejected.\n\nGreetings from JIMMY.\n\nYour application was not approved.\nPlease contact admin for assistance.",
-    )
+    update.message.reply_text("Registration rejected.")
 
-async def auto_approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                "Registration rejected.\n\n"
+                "Greetings from JIMMY.\n\n"
+                "Your application was not approved.\n"
+                "Please contact admin for assistance."
+            ),
+        )
+    except Exception:
+        logging.exception("Failed to notify rejected user")
+
+
+def auto_approve_join_request(update: Update, context: CallbackContext):
     req = update.chat_join_request
     employee = find_employee(req.from_user.id)
+
     if not employee:
-        await context.bot.decline_chat_join_request(chat_id=req.chat.id, user_id=req.from_user.id)
+        try:
+            context.bot.decline_chat_join_request(chat_id=req.chat.id, user_id=req.from_user.id)
+        except Exception:
+            logging.exception("Failed to decline join request")
         return
 
-    await context.bot.approve_chat_join_request(chat_id=req.chat.id, user_id=req.from_user.id)
-    await context.bot.send_message(
-        chat_id=req.from_user.id,
-        text="Your join request was approved automatically. Welcome to the private group.",
-    )
+    try:
+        context.bot.approve_chat_join_request(chat_id=req.chat.id, user_id=req.from_user.id)
+        context.bot.send_message(
+            chat_id=req.from_user.id,
+            text="Your join request was approved automatically. Welcome to the private group.",
+        )
+    except Exception:
+        logging.exception("Failed to approve join request")
 
-async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def login(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     employee = find_employee(user_id)
+
     if not employee:
-        await update.message.reply_text("You are not approved yet. Please complete signup first with /start")
+        update.message.reply_text("You are not approved yet. Please complete signup first with /start")
         return
 
     today = date_str()
     rows = get_attendance()
+
     for row in rows:
         if str(row["telegram_id"]) == str(user_id) and row["date"] == today and row.get("login_time"):
-            await update.message.reply_text("You already logged in today.")
+            update.message.reply_text("You already logged in today.")
             return
 
     dt = now_local()
+
     rows.append({
         "telegram_id": str(user_id),
         "name": employee["name"],
@@ -357,78 +449,104 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary = user_month_summary(user_id)
     report = format_login_report(employee, dt, summary["working_days"])
 
-    await update.message.reply_text("Login successful.")
-    await update.message.reply_text("Thanks For Join Work.\nPlease Focus on Sales.\nBest of Luck")
-    await context.bot.send_message(chat_id=PRIVATE_GROUP_ID, text=report)
-    await context.bot.send_message(chat_id=user_id, text=report)
+    update.message.reply_text("Login successful.")
+    update.message.reply_text("Thanks For Join Work.\nPlease Focus on Sales.\nBest of Luck")
 
-async def logout_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        context.bot.send_message(chat_id=PRIVATE_GROUP_ID, text=report)
+    except Exception:
+        logging.exception("Failed to send login report to group")
+
+    try:
+        context.bot.send_message(chat_id=user_id, text=report)
+    except Exception:
+        logging.exception("Failed to send login report to user")
+
+
+def logout_start(update: Update, context: CallbackContext):
     employee = find_employee(update.effective_user.id)
+
     if not employee:
-        await update.message.reply_text("You are not approved yet. Please complete signup first with /start")
+        update.message.reply_text("You are not approved yet. Please complete signup first with /start")
         return ConversationHandler.END
 
     rows = get_attendance()
     today = date_str()
     today_row = None
+
     for row in rows:
         if str(row["telegram_id"]) == str(update.effective_user.id) and row["date"] == today:
             today_row = row
             break
 
     if not today_row or not today_row.get("login_time"):
-        await update.message.reply_text("You did not login today.")
+        update.message.reply_text("You did not login today.")
         return ConversationHandler.END
 
     if today_row.get("logout_time"):
-        await update.message.reply_text("You already logged out today.")
+        update.message.reply_text("You already logged out today.")
         return ConversationHandler.END
 
     context.user_data["logout_items"] = []
     context.user_data["logout_customers"] = 0
-    await update.message.reply_text("How many customers attended today?")
+
+    update.message.reply_text("How many customers attended today?")
     return LOGOUT_CUSTOMERS
 
-async def logout_customers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def logout_customers(update: Update, context: CallbackContext):
     text = update.message.text.strip()
+
     if not text.isdigit():
-        await update.message.reply_text("Please enter numbers only.")
+        update.message.reply_text("Please enter numbers only.")
         return LOGOUT_CUSTOMERS
 
     context.user_data["logout_customers"] = int(text)
     keyboard = [[p] for p in PRODUCTS] + DONE_NONE_MENU
-    await update.message.reply_text("Select product.", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+
+    update.message.reply_text(
+        "Select product.",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True),
+    )
     return LOGOUT_PRODUCT
 
-async def logout_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def logout_product(update: Update, context: CallbackContext):
     text = update.message.text.strip()
+
     if text == "Done":
-        return await show_logout_summary(update, context)
+        return show_logout_summary(update, context)
+
     if text == "None":
         context.user_data["logout_items"] = []
-        return await show_logout_summary(update, context)
+        return show_logout_summary(update, context)
+
     if text not in PRODUCTS:
-        await update.message.reply_text("Please select a valid product.")
+        update.message.reply_text("Please select a valid product.")
         return LOGOUT_PRODUCT
 
     context.user_data["current_product"] = text
-    await update.message.reply_text(f"Enter quantity for {text}")
+    update.message.reply_text(f"Enter quantity for {text}")
     return LOGOUT_QTY
 
-async def logout_qty(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def logout_qty(update: Update, context: CallbackContext):
     text = update.message.text.strip()
+
     if not text.isdigit() or int(text) <= 0:
-        await update.message.reply_text("Please enter a valid quantity.")
+        update.message.reply_text("Please enter a valid quantity.")
         return LOGOUT_QTY
 
     context.user_data["current_qty"] = int(text)
-    await update.message.reply_text(f'Enter value for each product: {context.user_data["current_product"]}')
+    update.message.reply_text(f'Enter value for each product: {context.user_data["current_product"]}')
     return LOGOUT_VALUE
 
-async def logout_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def logout_value(update: Update, context: CallbackContext):
     text = update.message.text.strip()
+
     if not text.isdigit() or int(text) < 0:
-        await update.message.reply_text("Please enter a valid value.")
+        update.message.reply_text("Please enter a valid value.")
         return LOGOUT_VALUE
 
     price = int(text)
@@ -442,7 +560,7 @@ async def logout_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "total": total,
     })
 
-    await update.message.reply_text(
+    update.message.reply_text(
         f'{context.user_data["current_product"]}\n'
         f'Qty: {qty}\n'
         f'Price: {price}\n'
@@ -450,12 +568,17 @@ async def logout_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     keyboard = [[p] for p in PRODUCTS] + DONE_NONE_MENU
-    await update.message.reply_text("Select another product or press Done.", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+    update.message.reply_text(
+        "Select another product or press Done.",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True),
+    )
     return LOGOUT_PRODUCT
 
-async def show_logout_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def show_logout_summary(update: Update, context: CallbackContext):
     items = context.user_data.get("logout_items", [])
     lines = ["Today's Sales Summary\n"]
+
     total_qty = 0
     total_value = 0
 
@@ -477,19 +600,24 @@ async def show_logout_summary(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data["summary_total_qty"] = total_qty
     context.user_data["summary_total_value"] = total_value
 
-    await update.message.reply_text("\n".join(lines), reply_markup=ReplyKeyboardMarkup(CONFIRM_RETRY_MENU, resize_keyboard=True))
+    update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=ReplyKeyboardMarkup(CONFIRM_RETRY_MENU, resize_keyboard=True),
+    )
     return LOGOUT_CONFIRM
 
-async def logout_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def logout_confirm(update: Update, context: CallbackContext):
     text = update.message.text.strip()
+
     if text == "Retry":
         context.user_data["logout_items"] = []
         context.user_data["logout_customers"] = 0
-        await update.message.reply_text("No problem. Let's try again.\n\nHow many customers attended today?")
+        update.message.reply_text("No problem. Let's try again.\n\nHow many customers attended today?")
         return LOGOUT_CUSTOMERS
 
     if text != "Confirm":
-        await update.message.reply_text("Please press Confirm or Retry.")
+        update.message.reply_text("Please press Confirm or Retry.")
         return LOGOUT_CONFIRM
 
     user_id = update.effective_user.id
@@ -529,20 +657,36 @@ async def logout_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     summary = user_month_summary(user_id)
     report["month_working_days"] = summary["working_days"]
+
     final_text = build_dsr_text(employee, report, seconds_to_hms(work_seconds))
 
-    await update.message.reply_text("Logout successful.", reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True))
-    await context.bot.send_message(chat_id=PRIVATE_GROUP_ID, text=final_text)
-    await context.bot.send_message(chat_id=user_id, text=final_text)
+    update.message.reply_text(
+        "Logout successful.",
+        reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
+    )
+
+    try:
+        context.bot.send_message(chat_id=PRIVATE_GROUP_ID, text=final_text)
+    except Exception:
+        logging.exception("Failed to send logout report to group")
+
+    try:
+        context.bot.send_message(chat_id=user_id, text=final_text)
+    except Exception:
+        logging.exception("Failed to send logout report to user")
+
     return ConversationHandler.END
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def status(update: Update, context: CallbackContext):
     employee = find_employee(update.effective_user.id)
+
     if not employee:
-        await update.message.reply_text("You are not approved yet. Please complete signup first with /start")
+        update.message.reply_text("You are not approved yet. Please complete signup first with /start")
         return
 
     summary = user_month_summary(update.effective_user.id)
+
     lines = [
         "My Status\n",
         f'Name: {employee["name"]}',
@@ -567,30 +711,33 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for product in summary["products_by_date"][d]:
                 lines.append(product)
 
-    await update.message.reply_text("\n".join(lines))
+    update.message.reply_text("\n".join(lines))
 
-async def admin_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+def admin_history(update: Update, context: CallbackContext):
     if not is_admin(update.effective_user.id):
         return
 
     query = " ".join(context.args).strip()
     if not query:
-        await update.message.reply_text("Usage: /history Full Name")
+        update.message.reply_text("Usage: /history Full Name")
         return
 
     employees = get_employees()
     employee = None
+
     for item in employees:
         if item.get("name", "").lower() == query.lower():
             employee = item
             break
 
     if not employee:
-        await update.message.reply_text("Employee not found.")
+        update.message.reply_text("Employee not found.")
         return
 
     attendance = get_attendance()
     sales = get_sales()
+
     lines = [
         f'History for: {employee["name"]}',
         "",
@@ -599,9 +746,12 @@ async def admin_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "",
     ]
 
-    sales_map = {x["date"]: x for x in sales if str(x.get("telegram_id")) == str(employee["telegram_id"])}
+    sales_map = {
+        x["date"]: x for x in sales if str(x.get("telegram_id")) == str(employee["telegram_id"])
+    }
 
     found = False
+
     for row in attendance:
         if str(row["telegram_id"]) == str(employee["telegram_id"]):
             found = True
@@ -610,61 +760,65 @@ async def admin_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f'Login: {row.get("login_time") or "-"}')
             lines.append(f'Logout: {row.get("logout_time") or "-"}')
             lines.append(f'Work Hour: {seconds_to_hms(int(float(row.get("work_seconds") or 0)))}')
+
             sale = sales_map.get(row["date"])
             if sale:
                 lines.append(f'Total Customers: {sale.get("customers_attend", 0)}')
                 lines.append(f'Total Qty: {sale.get("total_qty", 0)}')
                 lines.append(f'Total Value: {sale.get("total_value", 0)}')
+
             lines.append("")
 
     if not found:
         lines.append("No history found.")
 
-    await update.message.reply_text("\n".join(lines))
+    update.message.reply_text("\n".join(lines))
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Cancelled.")
+
+def cancel(update: Update, context: CallbackContext):
+    update.message.reply_text("Cancelled.")
     return ConversationHandler.END
 
-def build_app():
-    app = Application.builder().token(BOT_TOKEN).build()
+
+def main():
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
     registration = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            REG_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_name)],
-            REG_MALL: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_mall)],
-            REG_STORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_store)],
-            REG_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_confirm)],
+            REG_NAME: [MessageHandler(Filters.text & ~Filters.command, reg_name)],
+            REG_MALL: [MessageHandler(Filters.text & ~Filters.command, reg_mall)],
+            REG_STORE: [MessageHandler(Filters.text & ~Filters.command, reg_store)],
+            REG_CONFIRM: [MessageHandler(Filters.text & ~Filters.command, reg_confirm)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
     logout_flow = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^Logout$"), logout_start)],
+        entry_points=[MessageHandler(Filters.regex("^Logout$"), logout_start)],
         states={
-            LOGOUT_CUSTOMERS: [MessageHandler(filters.TEXT & ~filters.COMMAND, logout_customers)],
-            LOGOUT_PRODUCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, logout_product)],
-            LOGOUT_QTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, logout_qty)],
-            LOGOUT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, logout_value)],
-            LOGOUT_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, logout_confirm)],
+            LOGOUT_CUSTOMERS: [MessageHandler(Filters.text & ~Filters.command, logout_customers)],
+            LOGOUT_PRODUCT: [MessageHandler(Filters.text & ~Filters.command, logout_product)],
+            LOGOUT_QTY: [MessageHandler(Filters.text & ~Filters.command, logout_qty)],
+            LOGOUT_VALUE: [MessageHandler(Filters.text & ~Filters.command, logout_value)],
+            LOGOUT_CONFIRM: [MessageHandler(Filters.text & ~Filters.command, logout_confirm)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
-    app.add_handler(registration)
-    app.add_handler(logout_flow)
-    app.add_handler(MessageHandler(filters.Regex(r"^Login$"), login))
-    app.add_handler(MessageHandler(filters.Regex(r"^Status$"), status))
-    app.add_handler(CommandHandler("history", admin_history))
-    app.add_handler(MessageHandler(filters.Regex(r"^/approve_\d+$"), approve_dynamic))
-    app.add_handler(MessageHandler(filters.Regex(r"^/reject_\d+$"), reject_dynamic))
-    app.add_handler(ChatJoinRequestHandler(auto_approve_join_request, chat_id=PRIVATE_GROUP_ID))
+    dp.add_handler(registration)
+    dp.add_handler(logout_flow)
+    dp.add_handler(MessageHandler(Filters.regex("^Login$"), login))
+    dp.add_handler(MessageHandler(Filters.regex("^Status$"), status))
+    dp.add_handler(CommandHandler("history", admin_history))
+    dp.add_handler(MessageHandler(Filters.regex(r"^/approve_\d+$"), approve_dynamic))
+    dp.add_handler(MessageHandler(Filters.regex(r"^/reject_\d+$"), reject_dynamic))
+    dp.add_handler(MessageHandler(Filters.status_update.chat_join_request, auto_approve_join_request))
 
-    return app
+    updater.start_polling(drop_pending_updates=True)
+    updater.idle()
+
 
 if __name__ == "__main__":
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN is missing in environment.")
-    app = build_app()
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    main()
