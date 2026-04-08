@@ -218,18 +218,13 @@ def build_dsr_text(employee, report, today_hours_text):
 
 def send_group_join_link(bot, user_id):
     try:
-        link = bot.create_chat_invite_link(
-            chat_id=PRIVATE_GROUP_ID,
-            name=f"JIMMY-{user_id}",
-            creates_join_request=True,
-        )
+        link = bot.export_chat_invite_link(chat_id=PRIVATE_GROUP_ID)
         bot.send_message(
             chat_id=user_id,
             text=(
                 "Your registration is approved.\n\n"
-                "Tap the link below to request joining the private group.\n"
-                "The bot will approve your request automatically.\n\n"
-                f"{link.invite_link}"
+                "Please join the private group using this link:\n\n"
+                f"{link}"
             ),
         )
     except Exception as e:
@@ -393,27 +388,6 @@ def reject_dynamic(update: Update, context: CallbackContext):
         )
     except Exception:
         logging.exception("Failed to notify rejected user")
-
-
-def auto_approve_join_request(update: Update, context: CallbackContext):
-    req = update.chat_join_request
-    employee = find_employee(req.from_user.id)
-
-    if not employee:
-        try:
-            context.bot.decline_chat_join_request(chat_id=req.chat.id, user_id=req.from_user.id)
-        except Exception:
-            logging.exception("Failed to decline join request")
-        return
-
-    try:
-        context.bot.approve_chat_join_request(chat_id=req.chat.id, user_id=req.from_user.id)
-        context.bot.send_message(
-            chat_id=req.from_user.id,
-            text="Your join request was approved automatically. Welcome to the private group.",
-        )
-    except Exception:
-        logging.exception("Failed to approve join request")
 
 
 def login(update: Update, context: CallbackContext):
@@ -814,7 +788,6 @@ def main():
     dp.add_handler(CommandHandler("history", admin_history))
     dp.add_handler(MessageHandler(Filters.regex(r"^/approve_\d+$"), approve_dynamic))
     dp.add_handler(MessageHandler(Filters.regex(r"^/reject_\d+$"), reject_dynamic))
-    dp.add_handler(MessageHandler(Filters.status_update.chat_join_request, auto_approve_join_request))
 
     updater.start_polling(drop_pending_updates=True)
     updater.idle()
