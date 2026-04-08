@@ -1,4 +1,7 @@
 import logging
+import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
 from collections import defaultdict
 
@@ -56,6 +59,23 @@ ATTENDANCE_FIELDS = [
     "logout_time",
     "work_seconds",
 ]
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"JIMMY bot is running")
+
+    def log_message(self, format, *args):
+        return
+
+
+def run_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
 
 
 def now_local():
@@ -755,6 +775,9 @@ def cancel(update: Update, context: CallbackContext):
 
 
 def main():
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
 
