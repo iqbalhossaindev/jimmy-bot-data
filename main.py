@@ -538,7 +538,7 @@ def send_admin_history_pdf(update, context):
 
     summary = user_month_summary(employee["telegram_id"])
     ym = now_local().strftime("%B %Y")
-    output_path = f"/tmp/admin_history_{employee["telegram_id"]}.pdf"
+    output_path = f"/tmp/admin_history_{employee['telegram_id']}.pdf"
     build_monthly_pdf(employee, summary, ym, output_path)
 
     with open(output_path, "rb") as file_obj:
