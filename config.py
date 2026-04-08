@@ -1,19 +1,17 @@
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
+BOT_TOKEN = os.getenv("8786909124:AAGsE9DM_uGv11yBYbwNfXreHwjFMzhHvMk", "")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
-PRIVATE_GROUP_ID = int(os.getenv("PRIVATE_GROUP_ID", "0"))
+ADMIN_IDS = [7330363421]
 
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
-GITHUB_OWNER = os.getenv("GITHUB_OWNER", "")
-GITHUB_REPO = os.getenv("GITHUB_REPO", "")
-GITHUB_BRANCH = os.getenv("GITHUB_BRANCH", "main")
+PRIVATE_GROUP_ID = -1003749297189
 
-TIMEZONE = os.getenv("TIMEZONE", "Asia/Dubai")
-BRAND_NAME = os.getenv("BRAND_NAME", "JIMMY")
+GITHUB_TOKEN = os.getenv("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", "")
+GITHUB_OWNER = "iqbalhossaindev"
+GITHUB_REPO = "jimmy-bot-data"
+GITHUB_BRANCH = "main"
+
+TIMEZONE = "Asia/Dubai"
 
 PRODUCTS = [
     "F7",
@@ -29,10 +27,17 @@ PRODUCTS = [
     "JV9 Pro Aqua",
 ]
 
-MAIN_MENU = [["Login", "Logout"], ["Status", "Break"]]
-BREAK_MENU = [["Break Start", "Break End"], ["Back"]]
-LOGOUT_MENU = [[p] for p in PRODUCTS] + [["Done", "None"], ["Undo", "Reset"]]
-YES_NO_MENU = [["Yes", "No"]]
-CONFIRM_RETRY_MENU = [["Confirm", "Retry"], ["Reset"]]
-STATUS_MENU = [["Print PDF"], ["Back to Main Menu"]]
-ADMIN_MENU = [["Pending Requests", "Employees List"], ["Today Reports", "Monthly Reports"], ["Back to Main Menu"]]
+MAIN_MENU = [
+    ["Login", "Logout"],
+    ["Status"],
+    ["Break Start", "Break End"],
+]
+
+YES_NO_MENU = [
+    ["Yes", "No"]
+]
+
+CONFIRM_RETRY_MENU = [
+    ["Confirm", "Retry"],
+    ["Reset"]
+]
