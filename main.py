@@ -53,7 +53,8 @@ tz = pytz.timezone(TIMEZONE)
     LOGOUT_QTY,
     LOGOUT_VALUE,
     LOGOUT_CONFIRM,
-) = range(9)
+    ADMIN_ADD_ADMIN_ID,
+) = range(10)
 
 ATTENDANCE_FIELDS = [
     "telegram_id",
@@ -67,6 +68,8 @@ ATTENDANCE_FIELDS = [
 ]
 
 BREAK_LIMIT_SECONDS = 3600
+ADMIN_MENU = [["Admin Panel", "Login"], ["Logout", "Status"], ["Break Start", "Break End"]]
+ADMIN_PANEL_MENU = [["Pending Requests", "Employees List"], ["Make Admin", "Back To Main"]]
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -649,10 +652,37 @@ def break_end(update, context):
     update.message.reply_text("⚠️ No active break found.")
 
 
+def show_admin_panel(update):
+    update.message.reply_text(
+        "🔐 Admin Panel",
+        reply_markup=ReplyKeyboardMarkup(ADMIN_PANEL_MENU, resize_keyboard=True),
+    )
+
+
+def show_main_menu_for_user(update, user_id):
+    if is_admin(user_id):
+        update.message.reply_text(
+            "Welcome Admin.",
+            reply_markup=ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True),
+        )
+    else:
+        update.message.reply_text(
+            "Welcome.",
+            reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
+        )
+
+
 def start(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    employee = find_employee(user_id)
 
+    if is_admin(user_id):
+        update.message.reply_text(
+            "👋 Welcome Admin to JIMMY.",
+            reply_markup=ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True),
+        )
+        return ConversationHandler.END
+
+    employee = find_employee(user_id)
     if employee:
         update.message.reply_text(
             "Welcome back to JIMMY.",
@@ -806,13 +836,108 @@ def reject_dynamic(update: Update, context: CallbackContext):
         logging.exception("Failed to notify rejected user")
 
 
+def show_pending_requests(update: Update, context: CallbackContext):
+    if not is_admin(update.effective_user.id):
+        return
+
+    pending = get_pending()
+    if not pending:
+        update.message.reply_text("No pending requests.")
+        return
+
+    lines = ["📝 *PENDING REQUESTS*\n"]
+    for item in pending:
+        lines.append(f'*{employee_label(item)}*')
+        lines.append(f'Approve: /approve_{item["telegram_id"]}')
+        lines.append(f'Reject: /reject_{item["telegram_id"]}')
+        lines.append("")
+
+    update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+def show_employees_list(update: Update, context: CallbackContext):
+    if not is_admin(update.effective_user.id):
+        return
+
+    employees = get_employees()
+    approved = [x for x in employees if x.get("status") == "approved"]
+
+    if not approved:
+        update.message.reply_text("No employees found.")
+        return
+
+    lines = ["👥 *EMPLOYEES LIST*\n"]
+    for item in approved:
+        lines.append(f'{employee_label(item)}')
+
+    update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+def admin_panel(update: Update, context: CallbackContext):
+    if not is_admin(update.effective_user.id):
+        update.message.reply_text("Admin only.")
+        return
+    show_admin_panel(update)
+
+
+def back_to_main(update: Update, context: CallbackContext):
+    show_main_menu_for_user(update, update.effective_user.id)
+
+
+def make_admin_start(update: Update, context: CallbackContext):
+    if not is_admin(update.effective_user.id):
+        update.message.reply_text("Admin only.")
+        return ConversationHandler.END
+
+    update.message.reply_text(
+        "Send the Telegram user ID you want to add as admin.",
+        reply_markup=ReplyKeyboardMarkup([["Back To Main"]], resize_keyboard=True),
+    )
+    return ADMIN_ADD_ADMIN_ID
+
+
+def make_admin_save(update: Update, context: CallbackContext):
+    if not is_admin(update.effective_user.id):
+        return ConversationHandler.END
+
+    text = update.message.text.strip()
+
+    if text == "Back To Main":
+        show_main_menu_for_user(update, update.effective_user.id)
+        return ConversationHandler.END
+
+    if not text.isdigit():
+        update.message.reply_text("Please send numeric Telegram ID only.")
+        return ADMIN_ADD_ADMIN_ID
+
+    new_admin_id = int(text)
+
+    if new_admin_id in ADMIN_IDS:
+        update.message.reply_text("This user is already admin.")
+        return ConversationHandler.END
+
+    update.message.reply_text(
+        "⚠️ Permanent admin IDs are controlled in config.py\n\n"
+        f"Please add this ID manually in config.py:\n{new_admin_id}\n\n"
+        "Then redeploy the bot."
+    )
+    return ConversationHandler.END
+
+
 def login(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     employee = find_employee(user_id)
 
-    if not employee:
+    if not employee and not is_admin(user_id):
         update.message.reply_text("You are not approved yet. Please complete signup first with /start")
         return
+
+    if is_admin(user_id) and not employee:
+        employee = {
+            "name": "Admin",
+            "mall_name": "Admin",
+            "store_name": "Admin",
+        }
 
     today = date_str()
     rows = get_attendance()
@@ -863,18 +988,26 @@ def login(update: Update, context: CallbackContext):
 
 
 def logout_start(update: Update, context: CallbackContext):
-    employee = find_employee(update.effective_user.id)
+    user_id = update.effective_user.id
+    employee = find_employee(user_id)
 
-    if not employee:
+    if not employee and not is_admin(user_id):
         update.message.reply_text("You are not approved yet. Please complete signup first with /start")
         return ConversationHandler.END
+
+    if is_admin(user_id) and not employee:
+        employee = {
+            "name": "Admin",
+            "mall_name": "Admin",
+            "store_name": "Admin",
+        }
 
     rows = get_attendance()
     today = date_str()
     today_row = None
 
     for row in rows:
-        if str(row["telegram_id"]) == str(update.effective_user.id) and row["date"] == today:
+        if str(row["telegram_id"]) == str(user_id) and row["date"] == today:
             today_row = row
             break
 
@@ -1075,6 +1208,14 @@ def logout_confirm(update: Update, context: CallbackContext):
 
     user_id = update.effective_user.id
     employee = find_employee(user_id)
+
+    if is_admin(user_id) and not employee:
+        employee = {
+            "name": "Admin",
+            "mall_name": "Admin",
+            "store_name": "Admin",
+        }
+
     rows = get_attendance()
     today = date_str()
     logout_value_dt = now_local()
@@ -1115,7 +1256,7 @@ def logout_confirm(update: Update, context: CallbackContext):
 
     update.message.reply_text(
         "Logout successful.",
-        reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
+        reply_markup=ReplyKeyboardMarkup(ADMIN_MENU if is_admin(user_id) else MAIN_MENU, resize_keyboard=True),
     )
 
     try:
@@ -1132,14 +1273,22 @@ def logout_confirm(update: Update, context: CallbackContext):
 
 
 def status(update: Update, context: CallbackContext):
-    employee = find_employee(update.effective_user.id)
+    user_id = update.effective_user.id
+    employee = find_employee(user_id)
 
-    if not employee:
+    if not employee and not is_admin(user_id):
         update.message.reply_text("You are not approved yet. Please complete signup first with /start")
         return
 
-    summary = user_month_summary(update.effective_user.id)
-    today_row = get_today_attendance_row(update.effective_user.id)
+    if is_admin(user_id) and not employee:
+        employee = {
+            "name": "Admin",
+            "mall_name": "Admin",
+            "store_name": "Admin",
+        }
+
+    summary = user_month_summary(user_id)
+    today_row = get_today_attendance_row(user_id)
     current_status = "Logged Out"
     login_time_value = "-"
 
@@ -1242,10 +1391,7 @@ def admin_history(update: Update, context: CallbackContext):
 
 def cancel(update: Update, context: CallbackContext):
     context.user_data.clear()
-    update.message.reply_text(
-        "Cancelled.",
-        reply_markup=ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True),
-    )
+    show_main_menu_for_user(update, update.effective_user.id)
     return ConversationHandler.END
 
 
@@ -1368,12 +1514,28 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
+    make_admin_flow = ConversationHandler(
+        entry_points=[MessageHandler(Filters.regex("^Make Admin$"), make_admin_start)],
+        states={
+            ADMIN_ADD_ADMIN_ID: [MessageHandler(Filters.text & ~Filters.command, make_admin_save)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
     dp.add_handler(registration)
     dp.add_handler(logout_flow)
+    dp.add_handler(make_admin_flow)
+
+    dp.add_handler(MessageHandler(Filters.regex("^Admin Panel$"), admin_panel))
+    dp.add_handler(MessageHandler(Filters.regex("^Pending Requests$"), show_pending_requests))
+    dp.add_handler(MessageHandler(Filters.regex("^Employees List$"), show_employees_list))
+    dp.add_handler(MessageHandler(Filters.regex("^Back To Main$"), back_to_main))
+
     dp.add_handler(MessageHandler(Filters.regex("^Login$"), login))
     dp.add_handler(MessageHandler(Filters.regex("^Status$"), status))
     dp.add_handler(MessageHandler(Filters.regex("^Break Start$"), break_start))
     dp.add_handler(MessageHandler(Filters.regex("^Break End$"), break_end))
+
     dp.add_handler(CommandHandler("statuspdf", send_user_monthly_pdf))
     dp.add_handler(CommandHandler("history", admin_history))
     dp.add_handler(CommandHandler("historypdf", send_admin_history_pdf))
